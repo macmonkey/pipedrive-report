@@ -3,7 +3,7 @@ from datetime import datetime
 from basic_calculator import calculate_deals_metrics, calculate_activities_metrics, calculate_response_time
 
 # Standardwerte (aktuelles Datum)
-default_month = datetime.now().month
+default_month = 6
 default_year = datetime.now().year
 
 # Argumentparser konfigurieren
@@ -19,7 +19,8 @@ year = args.year
 # Berechnung der einzelnen Metriken
 deals_metrics = calculate_deals_metrics(month, year)
 activities_metrics = calculate_activities_metrics(month, year)
-average_response_time, no_customer_email_ids = calculate_response_time(month, year)
+print("Berechne Response-Zeiten...", flush=True)
+average_response_time, no_customer_email_ids, no_contact_person_ids = calculate_response_time(month, year)
 
 # Zusammenführen der Ergebnisse in einem Report-Dictionary
 report = {
@@ -34,8 +35,10 @@ report = {
         "Activities Created": activities_metrics["activities_created"],
         "Activities Completed": activities_metrics["activities_completed"],
         "Average Response Time (Hours)": average_response_time if average_response_time else "N/A",
-        "Deals with No Customer Email": len(no_customer_email_ids),  # Anzahl der Deals ohne Kundenmail
-        "Deal IDs with No Customer Email": no_customer_email_ids     # IDs der Deals ohne Kundenmail
+        "Deals with No Customer Email": len(no_customer_email_ids),
+        "Deal IDs with No Customer Email": no_customer_email_ids,
+        "Deals with No Contact Person": len(no_contact_person_ids),
+        "Deal IDs with No Contact Person": no_contact_person_ids
     }
 }
 

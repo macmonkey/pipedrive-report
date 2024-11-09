@@ -1,9 +1,8 @@
 # basic_calculator.py
 
-import requests
-import datetime
-import calendar  # Kalender-Modul für Monatsberechnung
 import os
+
+import requests
 from dotenv import load_dotenv
 
 # Lade Umgebungsvariablen aus der .env-Datei
@@ -57,11 +56,16 @@ def calculate_deals_metrics(month, year):
           flush=True)
 
     deals = get_data('deals')
-    filtered_deals = [
-        deal for deal in deals
-        if
-        'add_time' in deal and start_of_month <= datetime.datetime.fromisoformat(deal['add_time'][:10]) <= end_of_month
-    ]
+    filtered_deals = []
+
+    for deal in deals:
+        deal_month = datetime.datetime.fromisoformat(deal['add_time']).month
+        deal_year = datetime.datetime.fromisoformat(deal['add_time']).year
+        if deal_month == month and deal_year == year:
+            print(f"add_time: {datetime.datetime.fromisoformat(deal['add_time']).date()}", flush=True)
+            filtered_deals.append(deal)
+
+    print(f"Gefilterte Deals: {filtered_deals}", flush=True)
 
     deals_created = len(filtered_deals)
     total_deal_value = sum(deal['value'] for deal in filtered_deals if deal['value'])
@@ -70,12 +74,21 @@ def calculate_deals_metrics(month, year):
     print(f"Gesamtwert der Deals: €{total_deal_value}", flush=True)
 
     deals_closed = len([deal for deal in filtered_deals if deal['status'] == 'closed'])
-    deals_won = len([deal for deal in filtered_deals if deal['status'] == 'won'])
+
+    # Erfasse gewonnene Deals und ihre IDs
+    won_deals = [deal for deal in filtered_deals if deal['status'] == 'won']
+    deals_won = len(won_deals)
+    won_deal_ids = [deal['id'] for deal in won_deals]
+
     deals_lost = len([deal for deal in filtered_deals if deal['status'] == 'lost'])
     deals_open = len([deal for deal in filtered_deals if deal['status'] == 'open'])
 
     print(f"Deals geschlossen: {deals_closed}, gewonnen: {deals_won}, verloren: {deals_lost}, offen: {deals_open}",
           flush=True)
+    print(f"IDs der gewonnenen Deals: {won_deal_ids}", flush=True)
+    print(f"Links zu den gewonnenen Deals:", flush=True)
+    for deal_id in won_deal_ids:
+        print(f"https://app.pipedrive.com/deal/{deal_id}", flush=True)
 
     return {
         "deals_created": deals_created,
@@ -83,7 +96,8 @@ def calculate_deals_metrics(month, year):
         "deals_closed": deals_closed,
         "deals_won": deals_won,
         "deals_lost": deals_lost,
-        "deals_open": deals_open
+        "deals_open": deals_open,
+        "won_deal_ids": won_deal_ids  # Neue Rückgabe der gewonnenen Deal-IDs
     }
 
 
@@ -105,6 +119,9 @@ def calculate_activities_metrics(month, year):
         "activities_completed": num_activities_completed
     }
 
+import csv
+import datetime
+import calendar
 
 def calculate_response_time(month, year):
     start_of_month = datetime.datetime(year, month, 1)
@@ -113,68 +130,103 @@ def calculate_response_time(month, year):
     print(f"Berechne Response-Zeiten für {month}-{year}", flush=True)
 
     # Lade alle Deals im angegebenen Zeitraum
-    deals = get_data('deals')
-    filtered_deals = [
-        deal for deal in deals
-        if
-        'add_time' in deal and start_of_month <= datetime.datetime.fromisoformat(deal['add_time'][:10]) <= end_of_month
-    ]
+    deals = get_data('deals', params={'start': 0})
+
+    filtered_deals = []
+
+    for deal in deals:
+        deal_month = datetime.datetime.fromisoformat(deal['add_time']).month
+        deeal_year = datetime.datetime.fromisoformat(deal['add_time']).year
+        if deal_month == month and deeal_year == year:
+            print(f"add_time: {datetime.datetime.fromisoformat(deal['add_time']).date()}", flush=True)
+            filtered_deals.append(deal)
+
+
+    print(f"Anzahl der Deals im Zeitraum {month}-{year}: {len(filtered_deals)}", flush=True)
 
     response_times = []
     no_customer_email_ids = []  # Liste für Deals ohne Kundenmail
+    no_contact_person_ids = []  # Liste für Deals ohne Kontaktperson
+    deal_data = []  # Daten für CSV
 
     for deal in filtered_deals:
         deal_id = deal['id']
         deal_creation_time = datetime.datetime.fromisoformat(deal['add_time'][:19])
         print(f"\nDeal ID: {deal_id} erstellt am {deal_creation_time}", flush=True)
+        print(f"https://app.pipedrive.com/deal/{deal_id}", flush=True)
 
-        # Abrufen der Kontaktdaten (Kunden-E-Mail-Adressen)
+        # Abrufen der Kontaktperson und der E-Mail-Adressen
         person_info = deal.get('person_id', {})
+        person_id = person_info.get('value')
+        person_name = person_info.get('name', 'Unbekannt')
         customer_emails = [email['value'].lower() for email in person_info.get('email', []) if 'value' in email]
 
-        if customer_emails:
-            print(f"Kunden-E-Mail-Adressen für Deal ID {deal_id}: {customer_emails}", flush=True)
-        else:
+        if not person_id:
+            print(f"Keine Kontaktperson für Deal ID {deal_id} gefunden", flush=True)
+            no_contact_person_ids.append(deal_id)
+            continue  # Ohne Kontaktperson keine Möglichkeit zur Antwortzeitberechnung
+
+        if not customer_emails:
             print(f"Keine Kunden-E-Mail-Adressen für Deal ID {deal_id} gefunden", flush=True)
-            no_customer_email_ids.append(deal_id)  # Deal ID speichern
+            no_customer_email_ids.append(deal_id)
             continue  # Ohne Kunden-E-Mail-Adresse ist eine Antwortzeit-Berechnung nicht möglich
 
-        # Abrufen der E-Mails, die zu diesem Deal gehören
-        emails = get_data(f"deals/{deal_id}/mailMessages", params={'start': 0})
-        print(f"Anzahl der E-Mails für Deal ID {deal_id}: {len(emails)}", flush=True)
+        print(f"Kunden-E-Mail-Adressen für Deal ID {deal_id}: {customer_emails}", flush=True)
 
-        # Suche nach der ersten E-Mail vom Agenten an eine der Kunden-E-Mail-Adressen (Liste umgedreht)
+        # Abrufen der E-Mails über den Kontaktpersonen-Endpunkt
+        emails = get_data(f"persons/{person_id}/mailMessages", params={'start': 0})
+        print(f"Anzahl der E-Mails für Kontaktperson ID {person_id}: {len(emails)}", flush=True)
+
+        # Suche nach der ersten E-Mail an die Kundenadresse (Liste umgekehrt)
         first_customer_email_time = None
         for email in reversed(emails):  # Beginne mit der ältesten E-Mail
             email_data = email.get("data", {})
-            from_addresses = [sender['email_address'].lower() for sender in email_data.get('from', [])]
             to_addresses = [recipient['email_address'].lower() for recipient in email_data.get('to', [])]
 
-            print(f"E-Mail von: {from_addresses} an: {to_addresses}", flush=True)
+            print(f"E-Mail an: {to_addresses} at: {email.get('timestamp', [])}", flush=True)
 
-            # Überprüfen, ob die E-Mail vom Agenten stammt und an den Kunden gesendet wurde
-            if any(agent_email for agent_email in from_addresses) and any(
-                    customer_email in to_addresses for customer_email in customer_emails):
-                email_time = datetime.datetime.fromisoformat(email_data['add_time'][:19])
-                first_customer_email_time = email_time
-                print(f"Erste E-Mail vom Agenten an Kunden gefunden: Gesendet am {first_customer_email_time}",
-                      flush=True)
-                break
+            # Setze das Datum für die erste Kunden-E-Mail (älteste)
+            first_customer_email_time = datetime.datetime.fromisoformat(email['timestamp'][:19])
+            break
 
         # Berechnung der Antwortzeit, falls eine E-Mail gefunden wurde
         if first_customer_email_time:
-            response_time_hours = (first_customer_email_time - deal_creation_time).total_seconds() / 3600
+            response_time_hours = round((first_customer_email_time - deal_creation_time).total_seconds() / 3600, 2)
             response_times.append(response_time_hours)
             print(f"Response-Zeit für Deal ID {deal_id}: {response_time_hours} Stunden", flush=True)
         else:
+            response_time_hours = "N/A"
             print(f"Keine Kunden-E-Mail für Deal ID {deal_id} gefunden", flush=True)
-            no_customer_email_ids.append(deal_id)  # Deal ID speichern
+            no_customer_email_ids.append(deal_id)
+
+        # CSV-Daten hinzufügen
+        deal_data.append({
+            "Deal ID": deal_id,
+            "Person ID": person_id,
+            "Person Name": person_name,
+            "Deal Creation Time": deal_creation_time,
+            "First Email Response Time": first_customer_email_time if first_customer_email_time else "N/A",
+            "Response Time (Hours)": response_time_hours
+        })
 
     # Durchschnittliche Response-Zeit über alle Deals berechnen
-    avg_response_time = sum(response_times) / len(response_times) if response_times else None
-    print(
-        f"\nDurchschnittliche Response-Zeit über alle Deals: {avg_response_time} Stunden" if avg_response_time else "Keine Response-Zeiten verfügbar",
-        flush=True)
+    avg_response_time = round(sum(response_times) / len(response_times), 2) if response_times else None
+    print(f"\nDurchschnittliche Response-Zeit über alle Deals: {avg_response_time} Stunden" if avg_response_time else "Keine Response-Zeiten verfügbar", flush=True)
 
-    # Rückgabe der durchschnittlichen Antwortzeit und der Liste der IDs ohne Kundenmail
-    return avg_response_time, no_customer_email_ids
+    # CSV-Datei speichern
+    csv_filename = f"response_times_{month}_{year}.csv"
+    with open(csv_filename, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=["Deal ID", "Person ID", "Person Name", "Deal Creation Time", "First Email Response Time", "Response Time (Hours)"])
+        writer.writeheader()
+        writer.writerows(deal_data)
+
+    print(f"\nCSV-Datei '{csv_filename}' wurde erfolgreich gespeichert.")
+
+    # Ausgabe von Deals ohne Kontaktperson und Deals ohne Kunden-E-Mails
+    print(f"\nAnzahl der Deals ohne Kontaktperson: {len(no_contact_person_ids)}")
+    print(f"Deals ohne Kontaktperson (IDs): {no_contact_person_ids}")
+    print(f"\nAnzahl der Deals ohne Kunden-E-Mail: {len(no_customer_email_ids)}")
+    print(f"Deals ohne Kunden-E-Mail (IDs): {no_customer_email_ids}")
+
+    # Rückgabe der durchschnittlichen Antwortzeit und der Listen ohne Kundenmail und ohne Kontaktperson
+    return avg_response_time, no_customer_email_ids, no_contact_person_ids
