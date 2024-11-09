@@ -48,24 +48,12 @@ def get_data(endpoint, params={}):
     return all_data
 
 
-def calculate_deals_metrics(month, year):
+def calculate_deals_metrics(month, year, filtered_deals):
     start_of_month = datetime.datetime(year, month, 1)
     end_of_month = start_of_month.replace(day=calendar.monthrange(year, month)[1])
 
     print(f"Berechne Deal-Metriken für {month}-{year} Startdatum: {start_of_month} Enddatum: {end_of_month}",
           flush=True)
-
-    deals = get_data('deals')
-    filtered_deals = []
-
-    for deal in deals:
-        deal_month = datetime.datetime.fromisoformat(deal['add_time']).month
-        deal_year = datetime.datetime.fromisoformat(deal['add_time']).year
-        if deal_month == month and deal_year == year:
-            print(f"add_time: {datetime.datetime.fromisoformat(deal['add_time']).date()}", flush=True)
-            filtered_deals.append(deal)
-
-    print(f"Gefilterte Deals: {filtered_deals}", flush=True)
 
     deals_created = len(filtered_deals)
     total_deal_value = sum(deal['value'] for deal in filtered_deals if deal['value'])
@@ -97,7 +85,7 @@ def calculate_deals_metrics(month, year):
         "deals_won": deals_won,
         "deals_lost": deals_lost,
         "deals_open": deals_open,
-        "won_deal_ids": won_deal_ids  # Neue Rückgabe der gewonnenen Deal-IDs
+        "won_deal_ids": won_deal_ids
     }
 
 
@@ -119,29 +107,17 @@ def calculate_activities_metrics(month, year):
         "activities_completed": num_activities_completed
     }
 
+
 import csv
 import datetime
 import calendar
 
-def calculate_response_time(month, year):
+
+def calculate_response_time(month, year, filtered_deals):
     start_of_month = datetime.datetime(year, month, 1)
     end_of_month = start_of_month.replace(day=calendar.monthrange(year, month)[1])
 
     print(f"Berechne Response-Zeiten für {month}-{year}", flush=True)
-
-    # Lade alle Deals im angegebenen Zeitraum
-    deals = get_data('deals', params={'start': 0})
-
-    filtered_deals = []
-
-    for deal in deals:
-        deal_month = datetime.datetime.fromisoformat(deal['add_time']).month
-        deeal_year = datetime.datetime.fromisoformat(deal['add_time']).year
-        if deal_month == month and deeal_year == year:
-            print(f"add_time: {datetime.datetime.fromisoformat(deal['add_time']).date()}", flush=True)
-            filtered_deals.append(deal)
-
-
     print(f"Anzahl der Deals im Zeitraum {month}-{year}: {len(filtered_deals)}", flush=True)
 
     response_times = []
@@ -157,6 +133,12 @@ def calculate_response_time(month, year):
 
         # Abrufen der Kontaktperson und der E-Mail-Adressen
         person_info = deal.get('person_id', {})
+
+        if person_info is None:
+            print(f"Keine Kontaktperson für Deal ID {deal_id} gefunden", flush=True)
+            no_contact_person_ids.append(deal_id)
+            continue  # Ohne Kontaktperson keine Möglichkeit zur Antwortzeitberechnung
+
         person_id = person_info.get('value')
         person_name = person_info.get('name', 'Unbekannt')
         customer_emails = [email['value'].lower() for email in person_info.get('email', []) if 'value' in email]
@@ -211,12 +193,15 @@ def calculate_response_time(month, year):
 
     # Durchschnittliche Response-Zeit über alle Deals berechnen
     avg_response_time = round(sum(response_times) / len(response_times), 2) if response_times else None
-    print(f"\nDurchschnittliche Response-Zeit über alle Deals: {avg_response_time} Stunden" if avg_response_time else "Keine Response-Zeiten verfügbar", flush=True)
+    print(
+        f"\nDurchschnittliche Response-Zeit über alle Deals: {avg_response_time} Stunden" if avg_response_time else "Keine Response-Zeiten verfügbar",
+        flush=True)
 
     # CSV-Datei speichern
     csv_filename = f"response_times_{month}_{year}.csv"
     with open(csv_filename, mode='w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=["Deal ID", "Person ID", "Person Name", "Deal Creation Time", "First Email Response Time", "Response Time (Hours)"])
+        writer = csv.DictWriter(file, fieldnames=["Deal ID", "Person ID", "Person Name", "Deal Creation Time",
+                                                  "First Email Response Time", "Response Time (Hours)"])
         writer.writeheader()
         writer.writerows(deal_data)
 
