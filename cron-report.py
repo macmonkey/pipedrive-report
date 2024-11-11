@@ -12,11 +12,11 @@ def filter_deals_for_month(deals, month, year):
     for deal in deals:
         deal_month = datetime.fromisoformat(deal['add_time']).month
         deal_year = datetime.fromisoformat(deal['add_time']).year
-        if deal_month == month and deal_year == year:
+        if deal_year == year and deal['status'] == 'open':
             print(f"add_time: {datetime.fromisoformat(deal['add_time']).date()}", flush=True)
             filtered_deals.append(deal)
 
-    print(f"Gefilterte Deals: {filtered_deals}", flush=True)
+    print(f"Gefilterte Deals: {len(filtered_deals)}", flush=True)
     return filtered_deals
 
 
@@ -64,6 +64,7 @@ report = {
         "Deal IDs with No Customer Email": no_customer_email_ids,
         "Deals with No Contact Person": len(no_contact_person_ids),
         "Deal IDs with No Contact Person": no_contact_person_ids,
+        "Slow Response Deals (>12h)": len(slow_response_deals),  # Neue Metrik
     }
 }
 
@@ -74,6 +75,16 @@ print("\nBasic Metrics:")
 for key, value in report["Basic Metrics"].items():
     print(f"  {key}: {value}")
 
+# Detaillierte Ausgabe der langsamen Response-Deals
+if slow_response_deals:
+    print("\nDetails zu Deals mit Antwortzeit >12h:")
+    for deal in slow_response_deals:
+        print(f"  Deal ID: {deal['deal_id']}")
+        print(f"  Kontaktperson: {deal['person_name']}")
+        print(f"  Response-Zeit: {deal['response_time']} Stunden")
+        print(f"  Link: https://app.pipedrive.com/deal/{deal['deal_id']}")
+        print("")
+
 # Speichern des Reports als CSV
 report_filename = f"sales_report_{month}_{year}.csv"
 with open(report_filename, mode='w', newline='') as file:
@@ -82,6 +93,19 @@ with open(report_filename, mode='w', newline='') as file:
     writer.writerow(['Report Month', report['Report Month']])
     for key, value in report["Basic Metrics"].items():
         writer.writerow([key, value])
+
+    # Zusätzliche Sektion für langsame Response-Deals
+    if slow_response_deals:
+        writer.writerow([])  # Leerzeile
+        writer.writerow(['Slow Response Deals (>12h)', ''])
+        writer.writerow(['Deal ID', 'Person Name', 'Response Time (Hours)', 'Deal Link'])
+        for deal in slow_response_deals:
+            writer.writerow([
+                deal['deal_id'],
+                deal['person_name'],
+                deal['response_time'],
+                f"https://app.pipedrive.com/deal/{deal['deal_id']}"
+            ])
 
 print(f"\nReport wurde als CSV in '{report_filename}' gespeichert.")
 print("\nBerechnung abgeschlossen.")
